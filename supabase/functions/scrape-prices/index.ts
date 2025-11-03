@@ -87,30 +87,23 @@ async function scrapeRealPrices(query: string) {
 
     const results = [...amazonData, ...flipkartData];
 
-    // Add other sites with adjusted prices based on average
+    // Add Myntra with adjusted prices based on average
     if (results.length > 0) {
       const avgPrice = Math.floor(results.reduce((sum, r) => sum + r.price, 0) / results.length);
-      const additionalSites = [
-        { name: 'Myntra', variance: -0.03 },
-        { name: 'Snapdeal', variance: 0.08 },
-      ];
+      const price = Math.floor(avgPrice * (1 + -0.03 + (Math.random() * 0.1 - 0.05)));
+      const hasDiscount = Math.random() > 0.4;
+      const originalPrice = hasDiscount 
+        ? Math.floor(price * (1 + Math.random() * 0.3 + 0.1)) 
+        : undefined;
 
-      additionalSites.forEach(site => {
-        const price = Math.floor(avgPrice * (1 + site.variance + (Math.random() * 0.1 - 0.05)));
-        const hasDiscount = Math.random() > 0.4;
-        const originalPrice = hasDiscount 
-          ? Math.floor(price * (1 + Math.random() * 0.3 + 0.1)) 
-          : undefined;
-
-        results.push({
-          site: site.name,
-          price,
-          originalPrice,
-          url: `https://www.${site.name.toLowerCase()}.com/search?q=${encodeURIComponent(query)}`,
-          rating: Number((3.8 + Math.random() * 0.9).toFixed(1)),
-          availability: Math.random() > 0.2 ? 'In Stock' : 'Limited Stock',
-          isDemo: false,
-        });
+      results.push({
+        site: 'Myntra',
+        price,
+        originalPrice,
+        url: `https://www.myntra.com/search?q=${encodeURIComponent(query)}`,
+        rating: Number((3.8 + Math.random() * 0.9).toFixed(1)),
+        availability: Math.random() > 0.2 ? 'In Stock' : 'Limited Stock',
+        isDemo: false,
       });
     }
 
@@ -181,22 +174,44 @@ async function fetchAmazonPrices(query: string, apiKey: string) {
 // Fetch Flipkart prices using Real-Time Flipkart Data2 API
 async function fetchFlipkartPrices(query: string, apiKey: string) {
   try {
-    // Using Real-Time Flipkart Data2 API
-    const response = await fetch(
+    // Using Real-Time Flipkart Data2 API - trying different endpoint patterns
+    const endpoints = [
       `https://real-time-flipkart-data2.p.rapidapi.com/search?q=${encodeURIComponent(query)}`,
-      {
-        method: 'GET',
-        headers: {
-          'X-RapidAPI-Key': apiKey,
-          'X-RapidAPI-Host': 'real-time-flipkart-data2.p.rapidapi.com'
-        }
-      }
-    );
+      `https://real-time-flipkart-data2.p.rapidapi.com/products/search?query=${encodeURIComponent(query)}`,
+      `https://real-time-flipkart-data2.p.rapidapi.com/api/search?q=${encodeURIComponent(query)}`
+    ];
 
-    if (!response.ok) {
-      console.error('Flipkart API request failed:', response.status);
-      const errorText = await response.text();
-      console.error('Flipkart API error response:', errorText);
+    let response: Response | null = null;
+    let lastError = '';
+
+    // Try different endpoint patterns
+    for (const endpoint of endpoints) {
+      try {
+        console.log('Trying Flipkart endpoint:', endpoint);
+        response = await fetch(endpoint, {
+          method: 'GET',
+          headers: {
+            'X-RapidAPI-Key': apiKey,
+            'X-RapidAPI-Host': 'real-time-flipkart-data2.p.rapidapi.com'
+          }
+        });
+
+        if (response.ok) {
+          console.log('Flipkart API success with endpoint:', endpoint);
+          break;
+        } else {
+          lastError = `${response.status}: ${await response.text()}`;
+          console.log(`Endpoint ${endpoint} failed:`, lastError);
+          response = null;
+        }
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : 'Unknown error';
+        console.log(`Endpoint ${endpoint} error:`, lastError);
+      }
+    }
+
+    if (!response || !response.ok) {
+      console.error('All Flipkart API endpoints failed. Last error:', lastError);
       return [];
     }
 
@@ -273,8 +288,6 @@ function generateDemoResults(query: string) {
     { name: 'Amazon.in', url: 'https://www.amazon.in', ratingRange: [4.0, 4.8] },
     { name: 'Flipkart', url: 'https://www.flipkart.com', ratingRange: [3.8, 4.6] },
     { name: 'Myntra', url: 'https://www.myntra.com', ratingRange: [4.2, 4.7] },
-    { name: 'Snapdeal', url: 'https://www.snapdeal.com', ratingRange: [3.5, 4.3] },
-    { name: 'Ajio', url: 'https://www.ajio.com', ratingRange: [4.0, 4.5] },
   ];
 
   // Generate random but realistic-looking prices
