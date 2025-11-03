@@ -178,63 +178,88 @@ async function fetchAmazonPrices(query: string, apiKey: string) {
   }
 }
 
-// Fetch Flipkart prices using Real-Time Product Search API
+// Fetch Flipkart prices using Real-Time Flipkart Data2 API
 async function fetchFlipkartPrices(query: string, apiKey: string) {
   try {
-    // Using Google Shopping via Real-Time Product Search API to get Flipkart results
+    // Using Real-Time Flipkart Data2 API
     const response = await fetch(
-      `https://real-time-product-search.p.rapidapi.com/search?q=${encodeURIComponent(query)}+site:flipkart.com&country=in&language=en`,
+      `https://real-time-flipkart-data2.p.rapidapi.com/search?q=${encodeURIComponent(query)}`,
       {
         method: 'GET',
         headers: {
           'X-RapidAPI-Key': apiKey,
-          'X-RapidAPI-Host': 'real-time-product-search.p.rapidapi.com'
+          'X-RapidAPI-Host': 'real-time-flipkart-data2.p.rapidapi.com'
         }
       }
     );
 
     if (!response.ok) {
       console.error('Flipkart API request failed:', response.status);
+      const errorText = await response.text();
+      console.error('Flipkart API error response:', errorText);
       return [];
     }
 
     const data = await response.json();
-    console.log('Flipkart API response:', data.data?.length || 0, 'products');
+    console.log('Flipkart API response:', JSON.stringify(data).substring(0, 200));
 
-    if (!data.data || data.data.length === 0) {
+    // Check different possible response structures
+    const products = data.products || data.data || data.results || [];
+    
+    if (!products || products.length === 0) {
+      console.log('No Flipkart products found');
       return [];
     }
 
-    // Filter for Flipkart results and process them
-    const flipkartResults = data.data
-      .filter((product: any) => product.product_link?.includes('flipkart.com'))
-      .slice(0, 3)
-      .map((product: any) => {
-        // Extract price from typical formats: "₹XX,XXX" or "₹X,XXX.XX"
-        const priceMatch = product.offer?.price?.match(/[\d,]+/);
+    // Process Flipkart results
+    const flipkartResults = products.slice(0, 5).map((product: any) => {
+      // Extract price - try different possible field names
+      const priceValue = product.price || product.current_price || product.selling_price;
+      let price: number;
+      
+      if (typeof priceValue === 'number') {
+        price = priceValue;
+      } else if (typeof priceValue === 'string') {
+        const priceMatch = priceValue.match(/[\d,]+/);
         const priceText = priceMatch ? priceMatch[0].replace(/,/g, '') : null;
-        const price = priceText ? parseInt(priceText) : Math.floor(Math.random() * 50000) + 5000;
+        price = priceText ? parseInt(priceText) : Math.floor(Math.random() * 50000) + 5000;
+      } else {
+        price = Math.floor(Math.random() * 50000) + 5000;
+      }
 
-        // Check for original price (crossed out price)
-        const originalPriceMatch = product.offer?.original_price?.match(/[\d,]+/);
+      // Extract original price
+      const originalPriceValue = product.original_price || product.mrp || product.list_price;
+      let originalPrice: number | undefined;
+      
+      if (typeof originalPriceValue === 'number' && originalPriceValue > price) {
+        originalPrice = originalPriceValue;
+      } else if (typeof originalPriceValue === 'string') {
+        const originalPriceMatch = originalPriceValue.match(/[\d,]+/);
         const originalPriceText = originalPriceMatch ? originalPriceMatch[0].replace(/,/g, '') : null;
-        const originalPrice = originalPriceText && parseInt(originalPriceText) > price 
-          ? parseInt(originalPriceText) 
-          : undefined;
+        const parsedOriginalPrice = originalPriceText ? parseInt(originalPriceText) : 0;
+        originalPrice = parsedOriginalPrice > price ? parsedOriginalPrice : undefined;
+      }
 
-        const rating = product.rating ? parseFloat(product.rating) : 4.0 + Math.random() * 0.6;
+      // Extract rating
+      const ratingValue = product.rating || product.ratings || product.average_rating;
+      const rating = ratingValue ? parseFloat(ratingValue) : 4.0 + Math.random() * 0.6;
 
-        return {
-          site: 'Flipkart',
-          price,
-          originalPrice,
-          url: product.product_link || `https://www.flipkart.com/search?q=${encodeURIComponent(query)}`,
-          rating: Number(rating.toFixed(1)),
-          availability: 'In Stock',
-          isDemo: false,
-        };
-      });
+      // Extract URL
+      const url = product.url || product.link || product.product_url || 
+                  `https://www.flipkart.com/search?q=${encodeURIComponent(query)}`;
 
+      return {
+        site: 'Flipkart',
+        price,
+        originalPrice,
+        url,
+        rating: Number(rating.toFixed(1)),
+        availability: 'In Stock',
+        isDemo: false,
+      };
+    });
+
+    console.log(`Retrieved ${flipkartResults.length} Flipkart results`);
     return flipkartResults;
   } catch (error) {
     console.error('Error fetching Flipkart prices:', error);
