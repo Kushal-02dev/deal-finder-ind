@@ -68,10 +68,11 @@ serve(async (req) => {
 
 // Fetch real prices using RapidAPI
 async function scrapeRealPrices(query: string) {
-  const RAPIDAPI_KEY = Deno.env.get('RAPIDAPI_KEY');
+  const RAPIDAPI_AMAZON_KEY = Deno.env.get('RAPIDAPI_KEY');
+  const RAPIDAPI_FLIPKART_KEY = Deno.env.get('RAPIDAPI_FLIPKART_KEY');
   
-  if (!RAPIDAPI_KEY) {
-    console.log('RAPIDAPI_KEY not configured, using demo data');
+  if (!RAPIDAPI_AMAZON_KEY && !RAPIDAPI_FLIPKART_KEY) {
+    console.log('No RapidAPI keys configured, using demo data');
     return generateDemoResults(query);
   }
 
@@ -80,8 +81,8 @@ async function scrapeRealPrices(query: string) {
     
     // Fetch both Amazon and Flipkart data in parallel
     const [amazonData, flipkartData] = await Promise.all([
-      fetchAmazonPrices(query, RAPIDAPI_KEY),
-      fetchFlipkartPrices(query, RAPIDAPI_KEY)
+      RAPIDAPI_AMAZON_KEY ? fetchAmazonPrices(query, RAPIDAPI_AMAZON_KEY) : Promise.resolve([]),
+      RAPIDAPI_FLIPKART_KEY ? fetchFlipkartPrices(query, RAPIDAPI_FLIPKART_KEY) : Promise.resolve([])
     ]);
 
     const results = [...amazonData, ...flipkartData];
