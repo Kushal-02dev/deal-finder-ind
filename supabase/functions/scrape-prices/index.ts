@@ -12,8 +12,8 @@ serve(async (req) => {
   }
 
   try {
-    const { query } = await req.json();
-    console.log('Price scraping request for:', query);
+    const { query, pincode } = await req.json();
+    console.log('Price scraping request for:', query, pincode ? `(pincode: ${pincode})` : '');
 
     // Input validation
     if (!query || typeof query !== 'string') {
@@ -40,7 +40,7 @@ serve(async (req) => {
     }
 
     // Attempt real scraping, fall back to demo data if it fails
-    const results = await scrapeRealPrices(sanitizedQuery);
+    const results = await scrapeRealPrices(sanitizedQuery, pincode);
 
     console.log(`Retrieved ${results.length} results for: ${sanitizedQuery}`);
 
@@ -67,7 +67,7 @@ serve(async (req) => {
 });
 
 // Fetch real prices using RapidAPI
-async function scrapeRealPrices(query: string) {
+async function scrapeRealPrices(query: string, pincode?: string) {
   const RAPIDAPI_AMAZON_KEY = Deno.env.get('RAPIDAPI_KEY');
   const RAPIDAPI_FLIPKART_KEY = Deno.env.get('RAPIDAPI_FLIPKART_KEY');
   
@@ -82,7 +82,7 @@ async function scrapeRealPrices(query: string) {
     // Fetch both Amazon and Flipkart data in parallel
     const [amazonData, flipkartData] = await Promise.all([
       RAPIDAPI_AMAZON_KEY ? fetchAmazonPrices(query, RAPIDAPI_AMAZON_KEY) : Promise.resolve([]),
-      RAPIDAPI_FLIPKART_KEY ? fetchFlipkartPrices(query, RAPIDAPI_FLIPKART_KEY) : Promise.resolve([])
+      RAPIDAPI_FLIPKART_KEY ? fetchFlipkartPrices(query, RAPIDAPI_FLIPKART_KEY, pincode) : Promise.resolve([])
     ]);
 
     const results = [...amazonData, ...flipkartData];
@@ -155,56 +155,76 @@ async function fetchAmazonPrices(query: string, apiKey: string) {
   }
 }
 
-// Fetch Flipkart prices using Real-Time Flipkart Data2 API
-async function fetchFlipkartPrices(query: string, apiKey: string) {
-  try {
-    // Using Real-Time Flipkart Data2 API - trying different endpoint patterns
-    const endpoints = [
-      // Common patterns observed on RapidAPI variants
-      `https://real-time-flipkart-data2.p.rapidapi.com/search?q=${encodeURIComponent(query)}`,
-      `https://real-time-flipkart-data2.p.rapidapi.com/search?query=${encodeURIComponent(query)}`,
-      `https://real-time-flipkart-data2.p.rapidapi.com/products/search?query=${encodeURIComponent(query)}`,
-      `https://real-time-flipkart-data2.p.rapidapi.com/api/search?q=${encodeURIComponent(query)}`,
-      `https://real-time-flipkart-data2.p.rapidapi.com/search-by-keyword?query=${encodeURIComponent(query)}`,
-      `https://real-time-flipkart-data2.p.rapidapi.com/product-search?query=${encodeURIComponent(query)}`
-    ];
+// Fetch Flipkart prices - tries both API hosts with multiple endpoint patterns
+async function fetchFlipkartPrices(query: string, apiKey: string, pincode?: string) {
+  // Try both known Flipkart API hosts on RapidAPI
+  const apiHosts = [
+    'real-time-flipkart-data.p.rapidapi.com',
+    'real-time-flipkart-data2.p.rapidapi.com'
+  ];
 
-    let response: Response | null = null;
-    let lastError = '';
+  const endpointPatterns = [
+    (host: string, q: string, pc?: string) => 
+      `https://${host}/search?q=${encodeURIComponent(q)}${pc ? `&pincode=${pc}` : ''}`,
+    (host: string, q: string, pc?: string) => 
+      `https://${host}/search?query=${encodeURIComponent(q)}${pc ? `&pincode=${pc}` : ''}`,
+    (host: string, q: string, pc?: string) => 
+      `https://${host}/products/search?query=${encodeURIComponent(q)}${pc ? `&pincode=${pc}` : ''}`,
+    (host: string, q: string, pc?: string) => 
+      `https://${host}/product-search?query=${encodeURIComponent(q)}${pc ? `&pincode=${pc}` : ''}`,
+    (host: string, q: string, pc?: string) => 
+      `https://${host}/search-by-keyword?query=${encodeURIComponent(q)}${pc ? `&pincode=${pc}` : ''}`,
+    (host: string, q: string, pc?: string) => 
+      `https://${host}/api/search?q=${encodeURIComponent(q)}${pc ? `&pincode=${pc}` : ''}`,
+  ];
 
-    // Try different endpoint patterns
-    for (const endpoint of endpoints) {
+  let successResponse: Response | null = null;
+  let successHost = '';
+  let lastError = '';
+
+  // Try each host with each endpoint pattern
+  for (const host of apiHosts) {
+    for (const endpointFn of endpointPatterns) {
+      const endpoint = endpointFn(host, query, pincode);
       try {
-        console.log('Trying Flipkart endpoint:', endpoint);
-        response = await fetch(endpoint, {
+        console.log(`[Flipkart] Trying: ${endpoint}`);
+        
+        const response = await fetch(endpoint, {
           method: 'GET',
           headers: {
             'X-RapidAPI-Key': apiKey,
-            'X-RapidAPI-Host': 'real-time-flipkart-data2.p.rapidapi.com'
+            'X-RapidAPI-Host': host
           }
         });
 
         if (response.ok) {
-          console.log('Flipkart API success with endpoint:', endpoint);
+          console.log(`✓ [Flipkart] SUCCESS with host=${host}, endpoint=${endpoint}`);
+          successResponse = response;
+          successHost = host;
           break;
         } else {
-          lastError = `${response.status}: ${await response.text()}`;
-          console.log(`Endpoint ${endpoint} failed:`, lastError);
-          response = null;
+          const errorText = await response.text();
+          lastError = `${response.status}: ${errorText}`;
+          console.log(`✗ [Flipkart] Failed (${response.status}): ${endpoint}`);
         }
       } catch (err) {
         lastError = err instanceof Error ? err.message : 'Unknown error';
-        console.log(`Endpoint ${endpoint} error:`, lastError);
+        console.log(`✗ [Flipkart] Error: ${endpoint} - ${lastError}`);
       }
     }
+    
+    if (successResponse) break;
+  }
 
-    if (!response || !response.ok) {
-      console.error('All Flipkart API endpoints failed. Last error:', lastError);
-      return [];
-    }
+  if (!successResponse || !successResponse.ok) {
+    console.error(`[Flipkart] All API combinations failed. Last error: ${lastError}`);
+    console.error('[Flipkart] Check your RapidAPI subscription for real-time-flipkart-data or real-time-flipkart-data2');
+    return [];
+  }
 
-    const data = await response.json();
-    console.log('Flipkart API response:', JSON.stringify(data).substring(0, 200));
+  try {
+    const data = await successResponse.json();
+    console.log(`[Flipkart] Response from ${successHost}:`, JSON.stringify(data).substring(0, 300));
 
     // Check different possible response structures
     const products = data.products || data.data || data.results || [];
@@ -265,7 +285,7 @@ async function fetchFlipkartPrices(query: string, apiKey: string) {
     console.log(`Retrieved ${flipkartResults.length} Flipkart results`);
     return flipkartResults;
   } catch (error) {
-    console.error('Error fetching Flipkart prices:', error);
+    console.error('[Flipkart] Error parsing response:', error);
     return [];
   }
 }

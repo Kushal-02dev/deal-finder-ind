@@ -74,7 +74,7 @@ const Index = () => {
             </h1>
             
             <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto">
-              Compare prices instantly from Amazon, Flipkart, Myntra, and more. 
+              Compare prices instantly from Amazon and Flipkart. 
               Save money with smart shopping decisions.
             </p>
 
@@ -149,7 +149,7 @@ const Index = () => {
       {/* Footer */}
       <footer className="container mx-auto px-4 py-8 mt-16 border-t border-border">
         <div className="text-center text-sm text-muted-foreground">
-          <p>Compare prices from Amazon.in, Flipkart, Myntra, Snapdeal, and more</p>
+          <p>Compare prices from Amazon.in and Flipkart</p>
           <p className="mt-2">Built with ❤️ for smart shoppers in India</p>
         </div>
       </footer>
