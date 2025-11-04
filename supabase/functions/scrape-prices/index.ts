@@ -87,25 +87,9 @@ async function scrapeRealPrices(query: string) {
 
     const results = [...amazonData, ...flipkartData];
 
-    // Add Myntra with adjusted prices based on average
-    if (results.length > 0) {
-      const avgPrice = Math.floor(results.reduce((sum, r) => sum + r.price, 0) / results.length);
-      const price = Math.floor(avgPrice * (1 + -0.03 + (Math.random() * 0.1 - 0.05)));
-      const hasDiscount = Math.random() > 0.4;
-      const originalPrice = hasDiscount 
-        ? Math.floor(price * (1 + Math.random() * 0.3 + 0.1)) 
-        : undefined;
+    // Only include Amazon and Flipkart results; no additional sites added
+    // (Removed Myntra injection as requested)
 
-      results.push({
-        site: 'Myntra',
-        price,
-        originalPrice,
-        url: `https://www.myntra.com/search?q=${encodeURIComponent(query)}`,
-        rating: Number((3.8 + Math.random() * 0.9).toFixed(1)),
-        availability: Math.random() > 0.2 ? 'In Stock' : 'Limited Stock',
-        isDemo: false,
-      });
-    }
 
     console.log(`Successfully fetched ${results.length} real results`);
     return results.length > 0 ? results : generateDemoResults(query);
@@ -176,9 +160,13 @@ async function fetchFlipkartPrices(query: string, apiKey: string) {
   try {
     // Using Real-Time Flipkart Data2 API - trying different endpoint patterns
     const endpoints = [
+      // Common patterns observed on RapidAPI variants
       `https://real-time-flipkart-data2.p.rapidapi.com/search?q=${encodeURIComponent(query)}`,
+      `https://real-time-flipkart-data2.p.rapidapi.com/search?query=${encodeURIComponent(query)}`,
       `https://real-time-flipkart-data2.p.rapidapi.com/products/search?query=${encodeURIComponent(query)}`,
-      `https://real-time-flipkart-data2.p.rapidapi.com/api/search?q=${encodeURIComponent(query)}`
+      `https://real-time-flipkart-data2.p.rapidapi.com/api/search?q=${encodeURIComponent(query)}`,
+      `https://real-time-flipkart-data2.p.rapidapi.com/search-by-keyword?query=${encodeURIComponent(query)}`,
+      `https://real-time-flipkart-data2.p.rapidapi.com/product-search?query=${encodeURIComponent(query)}`
     ];
 
     let response: Response | null = null;
@@ -287,7 +275,6 @@ function generateDemoResults(query: string) {
   const sites = [
     { name: 'Amazon.in', url: 'https://www.amazon.in', ratingRange: [4.0, 4.8] },
     { name: 'Flipkart', url: 'https://www.flipkart.com', ratingRange: [3.8, 4.6] },
-    { name: 'Myntra', url: 'https://www.myntra.com', ratingRange: [4.2, 4.7] },
   ];
 
   // Generate random but realistic-looking prices
