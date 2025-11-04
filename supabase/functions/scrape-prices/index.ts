@@ -155,10 +155,11 @@ async function fetchAmazonPrices(query: string, apiKey: string) {
   }
 }
 
-// Fetch Flipkart prices - tries both API hosts with multiple endpoint patterns
+// Fetch Flipkart prices - tries multiple API hosts with various endpoint patterns
 async function fetchFlipkartPrices(query: string, apiKey: string, pincode?: string) {
-  // Try both known Flipkart API hosts on RapidAPI
+  // Try all known Flipkart API hosts on RapidAPI
   const apiHosts = [
+    'real-time-flipkart-api.p.rapidapi.com',
     'real-time-flipkart-data.p.rapidapi.com',
     'real-time-flipkart-data2.p.rapidapi.com'
   ];
