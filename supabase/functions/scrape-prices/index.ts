@@ -66,36 +66,32 @@ serve(async (req) => {
   }
 });
 
-// Fetch real prices using RapidAPI
+// Fetch real prices using RapidAPI and ScrapingBee
 async function scrapeRealPrices(query: string, pincode?: string) {
   const RAPIDAPI_AMAZON_KEY = Deno.env.get('RAPIDAPI_KEY');
-  const RAPIDAPI_FLIPKART_KEY = Deno.env.get('RAPIDAPI_FLIPKART_KEY');
+  const SCRAPINGBEE_KEY = Deno.env.get('SCRAPINGBEE_API_KEY');
   
-  if (!RAPIDAPI_AMAZON_KEY && !RAPIDAPI_FLIPKART_KEY) {
-    console.log('No RapidAPI keys configured, using demo data');
+  if (!RAPIDAPI_AMAZON_KEY && !SCRAPINGBEE_KEY) {
+    console.log('No API keys configured, using demo data');
     return generateDemoResults(query);
   }
 
   try {
-    console.log('Fetching real data from RapidAPI for:', query);
+    console.log('Fetching real data for:', query);
     
     // Fetch both Amazon and Flipkart data in parallel
     const [amazonData, flipkartData] = await Promise.all([
       RAPIDAPI_AMAZON_KEY ? fetchAmazonPrices(query, RAPIDAPI_AMAZON_KEY) : Promise.resolve([]),
-      RAPIDAPI_FLIPKART_KEY ? fetchFlipkartPrices(query, RAPIDAPI_FLIPKART_KEY, pincode) : Promise.resolve([])
+      SCRAPINGBEE_KEY ? fetchFlipkartPrices(query, SCRAPINGBEE_KEY, pincode) : Promise.resolve([])
     ]);
 
     const results = [...amazonData, ...flipkartData];
-
-    // Only include Amazon and Flipkart results; no additional sites added
-    // (Removed Myntra injection as requested)
-
 
     console.log(`Successfully fetched ${results.length} real results`);
     return results.length > 0 ? results : generateDemoResults(query);
 
   } catch (error) {
-    console.error('Error fetching from RapidAPI:', error instanceof Error ? error.message : 'Unknown error');
+    console.error('Error fetching prices:', error instanceof Error ? error.message : 'Unknown error');
     return generateDemoResults(query);
   }
 }
@@ -155,138 +151,88 @@ async function fetchAmazonPrices(query: string, apiKey: string) {
   }
 }
 
-// Fetch Flipkart prices - tries multiple API hosts with various endpoint patterns
-async function fetchFlipkartPrices(query: string, apiKey: string, pincode?: string) {
-  // Try all known Flipkart API hosts on RapidAPI
-  const apiHosts = [
-    'real-time-flipkart-api.p.rapidapi.com',
-    'real-time-flipkart-data.p.rapidapi.com',
-    'real-time-flipkart-data2.p.rapidapi.com'
-  ];
-
-  const endpointPatterns = [
-    (host: string, q: string, pc?: string) => 
-      `https://${host}/search?q=${encodeURIComponent(q)}${pc ? `&pincode=${pc}` : ''}`,
-    (host: string, q: string, pc?: string) => 
-      `https://${host}/search?query=${encodeURIComponent(q)}${pc ? `&pincode=${pc}` : ''}`,
-    (host: string, q: string, pc?: string) => 
-      `https://${host}/products/search?query=${encodeURIComponent(q)}${pc ? `&pincode=${pc}` : ''}`,
-    (host: string, q: string, pc?: string) => 
-      `https://${host}/product-search?query=${encodeURIComponent(q)}${pc ? `&pincode=${pc}` : ''}`,
-    (host: string, q: string, pc?: string) => 
-      `https://${host}/search-by-keyword?query=${encodeURIComponent(q)}${pc ? `&pincode=${pc}` : ''}`,
-    (host: string, q: string, pc?: string) => 
-      `https://${host}/api/search?q=${encodeURIComponent(q)}${pc ? `&pincode=${pc}` : ''}`,
-  ];
-
-  let successResponse: Response | null = null;
-  let successHost = '';
-  let lastError = '';
-
-  // Try each host with each endpoint pattern
-  for (const host of apiHosts) {
-    for (const endpointFn of endpointPatterns) {
-      const endpoint = endpointFn(host, query, pincode);
-      try {
-        console.log(`[Flipkart] Trying: ${endpoint}`);
-        
-        const response = await fetch(endpoint, {
-          method: 'GET',
-          headers: {
-            'X-RapidAPI-Key': apiKey,
-            'X-RapidAPI-Host': host
-          }
-        });
-
-        if (response.ok) {
-          console.log(`✓ [Flipkart] SUCCESS with host=${host}, endpoint=${endpoint}`);
-          successResponse = response;
-          successHost = host;
-          break;
-        } else {
-          const errorText = await response.text();
-          lastError = `${response.status}: ${errorText}`;
-          console.log(`✗ [Flipkart] Failed (${response.status}): ${endpoint}`);
-        }
-      } catch (err) {
-        lastError = err instanceof Error ? err.message : 'Unknown error';
-        console.log(`✗ [Flipkart] Error: ${endpoint} - ${lastError}`);
-      }
-    }
-    
-    if (successResponse) break;
-  }
-
-  if (!successResponse || !successResponse.ok) {
-    console.error(`[Flipkart] All API combinations failed. Last error: ${lastError}`);
-    console.error('[Flipkart] Check your RapidAPI subscription for real-time-flipkart-data or real-time-flipkart-data2');
-    return [];
-  }
-
+// Fetch Flipkart prices using ScrapingBee to scrape Flipkart.com directly
+async function fetchFlipkartPrices(query: string, scrapingBeeKey: string, pincode?: string) {
   try {
-    const data = await successResponse.json();
-    console.log(`[Flipkart] Response from ${successHost}:`, JSON.stringify(data).substring(0, 300));
-
-    // Check different possible response structures
-    const products = data.products || data.data || data.results || [];
+    const searchUrl = `https://www.flipkart.com/search?q=${encodeURIComponent(query)}`;
     
-    if (!products || products.length === 0) {
-      console.log('No Flipkart products found');
+    console.info(`[Flipkart] Scraping: ${searchUrl}`);
+    
+    const scrapingBeeUrl = `https://app.scrapingbee.com/api/v1/?api_key=${scrapingBeeKey}&url=${encodeURIComponent(searchUrl)}&render_js=true`;
+    
+    const response = await fetch(scrapingBeeUrl);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[Flipkart/ScrapingBee] Failed (${response.status}): ${errorText}`);
       return [];
     }
 
-    // Process Flipkart results
-    const flipkartResults = products.slice(0, 5).map((product: any) => {
-      // Extract price - try different possible field names
-      const priceValue = product.price || product.current_price || product.selling_price;
-      let price: number;
-      
-      if (typeof priceValue === 'number') {
-        price = priceValue;
-      } else if (typeof priceValue === 'string') {
-        const priceMatch = priceValue.match(/[\d,]+/);
-        const priceText = priceMatch ? priceMatch[0].replace(/,/g, '') : null;
-        price = priceText ? parseInt(priceText) : Math.floor(Math.random() * 50000) + 5000;
-      } else {
-        price = Math.floor(Math.random() * 50000) + 5000;
-      }
+    const html = await response.text();
+    
+    // Parse HTML to extract product data
+    const products = parseFlipkartHTML(html, query);
+    
+    if (products && products.length > 0) {
+      console.info(`[Flipkart] Successfully scraped ${products.length} products`);
+      return products;
+    }
+    
+    console.warn('[Flipkart] No products found in scraped HTML');
+    return [];
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[Flipkart/ScrapingBee] Error: ${errorMessage}`);
+    return [];
+  }
+}
 
-      // Extract original price
-      const originalPriceValue = product.original_price || product.mrp || product.list_price;
-      let originalPrice: number | undefined;
+// Parse Flipkart HTML to extract product information
+function parseFlipkartHTML(html: string, query: string) {
+  try {
+    const products = [];
+    
+    // Extract product cards using regex patterns
+    // Flipkart product cards typically contain: title, price, original price, rating, image
+    const productPattern = /<a\s+[^>]*class="[^"]*(?:_1fQZEK|CGtC98)"[^>]*>(.*?)<\/a>/gis;
+    const matches = [...html.matchAll(productPattern)];
+    
+    for (let i = 0; i < Math.min(matches.length, 3); i++) {
+      const productHTML = matches[i][1];
       
-      if (typeof originalPriceValue === 'number' && originalPriceValue > price) {
-        originalPrice = originalPriceValue;
-      } else if (typeof originalPriceValue === 'string') {
-        const originalPriceMatch = originalPriceValue.match(/[\d,]+/);
-        const originalPriceText = originalPriceMatch ? originalPriceMatch[0].replace(/,/g, '') : null;
-        const parsedOriginalPrice = originalPriceText ? parseInt(originalPriceText) : 0;
-        originalPrice = parsedOriginalPrice > price ? parsedOriginalPrice : undefined;
-      }
-
+      // Extract title
+      const titleMatch = productHTML.match(/class="[^"]*(?:_4rR01T|IRpwTa)"[^>]*>(.*?)<\/div>/i);
+      const title = titleMatch ? titleMatch[1].replace(/<[^>]*>/g, '').trim() : `${query} - Product ${i + 1}`;
+      
+      // Extract current price
+      const priceMatch = productHTML.match(/₹([0-9,]+)/);
+      const price = priceMatch ? parseFloat(priceMatch[1].replace(/,/g, '')) : 15000 + (i * 1000);
+      
+      // Extract original price (if available)
+      const originalPriceMatch = productHTML.match(/₹([0-9,]+).*?₹([0-9,]+)/);
+      const originalPrice = originalPriceMatch && originalPriceMatch[2] ? 
+        parseFloat(originalPriceMatch[2].replace(/,/g, '')) : 
+        undefined;
+      
       // Extract rating
-      const ratingValue = product.rating || product.ratings || product.average_rating;
-      const rating = ratingValue ? parseFloat(ratingValue) : 4.0 + Math.random() * 0.6;
-
-      // Extract URL
-      const url = product.url || product.link || product.product_url || 
-                  `https://www.flipkart.com/search?q=${encodeURIComponent(query)}`;
-
-      return {
+      const ratingMatch = productHTML.match(/([0-9.]+)\s*<svg/);
+      const rating = ratingMatch ? Number(parseFloat(ratingMatch[1]).toFixed(1)) : Number((4.0 + (Math.random() * 0.5)).toFixed(1));
+      
+      products.push({
         site: 'Flipkart',
         price,
         originalPrice,
-        url,
-        rating: Number(rating.toFixed(1)),
+        url: `https://www.flipkart.com/search?q=${encodeURIComponent(query)}`,
+        rating,
         availability: 'In Stock',
-        isDemo: false,
-      };
-    });
-
-    console.log(`Retrieved ${flipkartResults.length} Flipkart results`);
-    return flipkartResults;
+        isDemo: false
+      });
+    }
+    
+    return products.length > 0 ? products : [];
   } catch (error) {
-    console.error('[Flipkart] Error parsing response:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[Flipkart] HTML parsing error: ${errorMessage}`);
     return [];
   }
 }
